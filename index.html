@@ -1,21 +1,293 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ZONE WARZ</title>
-    <style>
-        body { font-family: Arial, sans-serif; background-color: #000; color: #fff; }
-        #gameArea { width: 100%; height: 100vh; border: 1px solid #fff; }
-    </style>
+  <title>ZONE WARZ!!!</title>
+  <style>
+    body { margin:0; overflow:hidden; font-family:Arial; background:black; color:white; }
+    #menu {
+      position:absolute;
+      top:50%;
+      left:50%;
+      transform:translate(-50%,-50%);
+      text-align:center;
+      z-index:100;
+    }
+    button {
+      padding:15px;
+      margin:10px;
+      font-size:18px;
+      border:none;
+      border-radius:10px;
+      cursor:pointer;
+      background:#ff0000;
+      color:white;
+      font-weight:bold;
+    }
+    button:hover {
+      background:#cc0000;
+    }
+    #hud {
+      position:absolute;
+      top:10px;
+      left:10px;
+      display:none;
+      z-index:50;
+    }
+    #stats {
+      position:absolute;
+      top:10px;
+      right:10px;
+      display:none;
+      font-size:18px;
+      z-index:50;
+      background:rgba(0,0,0,0.7);
+      padding:15px;
+      border-radius:5px;
+    }
+    #scope {
+      position:absolute;
+      top:50%;
+      left:50%;
+      transform:translate(-50%,-50%);
+      display:none;
+      z-index:40;
+    }
+    .scope-circle {
+      width:200px;
+      height:200px;
+      border:3px solid #00ff00;
+      border-radius:50%;
+      box-shadow:0 0 20px #00ff00, inset 0 0 20px #00ff00;
+    }
+    .crosshair {
+      position:absolute;
+      top:50%;
+      left:50%;
+      transform:translate(-50%,-50%);
+      width:20px;
+      height:20px;
+      border:2px solid #00ff00;
+    }
+  </style>
 </head>
 <body>
-    <h1>Welcome to ZONE WARZ</h1>
-    <div id="gameArea"></div>
-    <script>
-        // Game code logic goes here
-        console.log('ZONE WARZ game initialized!');
-        // More game functionality would be added here.
-    </script>
+
+<div id="menu">
+  <h1>🔥 ZONE WARZ!!! 🔥</h1>
+  <p>PLAYER VS AI COMBAT</p>
+  <button onclick="startGame('arena')">🎯 Arena Mode (1 Enemy)</button>
+  <button onclick="startGame('survival')">⚔️ Survival Mode (5 Enemies)</button>
+</div>
+
+<div id="hud">
+  <button onclick="backToMenu()">⬅ Menu</button>
+  <p>Controls: WASD = Move | Z = Scope | Click = Shoot</p>
+</div>
+
+<div id="stats">
+  <p>Enemies Defeated: <span id="kills">0</span></p>
+  <p>Health: <span id="health">100</span>/100</p>
+  <p>Scoped: <span id="scopedStatus">OFF</span></p>
+</div>
+
+<div id="scope">
+  <div class="scope-circle">
+    <div class="crosshair"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+
+<script>
+let scene, camera, renderer;
+let enemies = [];
+let mode = "";
+let kills = 0;
+let health = 100;
+let isScoped = false;
+let originalFOV = 75;
+
+function startGame(selectedMode){
+  mode = selectedMode;
+  document.getElementById("menu").style.display="none";
+  document.getElementById("hud").style.display="block";
+  document.getElementById("stats").style.display="block";
+
+  init();
+}
+
+function backToMenu(){
+  location.reload();
+}
+
+function init(){
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setClearColor(0x1a1a1a);
+  document.body.appendChild(renderer.domElement);
+
+  camera.position.y = 1.5;
+  camera.position.z = 5;
+
+  // floor
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(100,100),
+    new THREE.MeshBasicMaterial({color:0x222222, side:THREE.DoubleSide})
+  );
+  floor.rotation.x = Math.PI/2;
+  scene.add(floor);
+
+  // walls
+  const wallGeometry = new THREE.PlaneGeometry(100, 20);
+  const wallMaterial = new THREE.MeshBasicMaterial({color:0x333333});
+  
+  const wall1 = new THREE.Mesh(wallGeometry, wallMaterial);
+  wall1.position.z = -50;
+  wall1.position.y = 10;
+  scene.add(wall1);
+  
+  const wall2 = new THREE.Mesh(wallGeometry, wallMaterial);
+  wall2.position.z = 50;
+  wall2.position.y = 10;
+  scene.add(wall2);
+
+  spawnEnemies();
+  animate();
+}
+
+function spawnEnemies(){
+  enemies = [];
+
+  let count = mode === "survival" ? 5 : 1;
+
+  for(let i=0;i<count;i++){ 
+    const enemy = new THREE.Mesh(
+      new THREE.BoxGeometry(1,2,1),
+      new THREE.MeshBasicMaterial({color:0xff0000})
+    );
+
+    let spawned = false;
+    while(!spawned) {
+      const x = Math.random()*40-20;
+      const z = Math.random()*40-20;
+      if(Math.abs(x) > 5 || Math.abs(z) > 5) {
+        enemy.position.set(x, 1, z);
+        spawned = true;
+      }
+    }
+
+    scene.add(enemy);
+    enemies.push({
+      mesh: enemy,
+      health: 50,
+      lastShot: 0
+    });
+  }
+}
+
+// movement
+const keys = {};
+document.addEventListener("keydown", e => {
+  const key = e.key.toLowerCase();
+  keys[key] = true;
+  
+  if(key === 'z') {
+    toggleScope();
+  }
+});
+document.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+
+function toggleScope() {
+  isScoped = !isScoped;
+  if(isScoped) {
+    document.getElementById("scope").style.display = "block";
+    camera.fov = 20;
+    document.getElementById("scopedStatus").textContent = "ON";
+  } else {
+    document.getElementById("scope").style.display = "none";
+    camera.fov = originalFOV;
+    document.getElementById("scopedStatus").textContent = "OFF";
+  }
+  camera.updateProjectionMatrix();
+}
+
+// shooting
+document.addEventListener("click", () => {
+  const raycaster = new THREE.Raycaster();
+  const direction = new THREE.Vector3(0, 0, -1);
+  direction.applyQuaternion(camera.quaternion);
+  raycaster.set(camera.position, direction);
+
+  enemies.forEach((enemy, index) => {
+    const distance = raycaster.ray.distanceToPoint(enemy.mesh.position);
+    if(distance < 1.5 && camera.position.distanceTo(enemy.mesh.position) < 50) {
+      enemy.health -= isScoped ? 50 : 25;
+      
+      if(enemy.health <= 0) {
+        scene.remove(enemy.mesh);
+        enemies.splice(index, 1);
+        kills++;
+        document.getElementById("kills").textContent = kills;
+      }
+    }
+  });
+});
+
+// AI behavior
+function updateAI() {
+  enemies.forEach(enemy => {
+    const distance = camera.position.distanceTo(enemy.mesh.position);
+    
+    // Chase player
+    const direction = new THREE.Vector3();
+    direction.subVectors(camera.position, enemy.mesh.position).normalize();
+    
+    enemy.mesh.position.x += direction.x * 0.08;
+    enemy.mesh.position.z += direction.z * 0.08;
+    
+    // Look at player
+    enemy.mesh.lookAt(camera.position);
+    
+    // Shoot at player if close enough
+    if(distance < 20 && Math.random() < 0.02) {
+      health -= Math.random() * 10;
+      if(health < 0) health = 0;
+      document.getElementById("health").textContent = Math.floor(health);
+    }
+  });
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+
+  // movement
+  if(keys["w"]) camera.position.z -= 0.15;
+  if(keys["s"]) camera.position.z += 0.15;
+  if(keys["a"]) camera.position.x -= 0.15;
+  if(keys["d"]) camera.position.x += 0.15;
+
+  // Keep player in bounds
+  camera.position.x = Math.max(-48, Math.min(48, camera.position.x));
+  camera.position.z = Math.max(-48, Math.min(48, camera.position.z));
+
+  updateAI();
+
+  renderer.render(scene, camera);
+
+  if(health <= 0) {
+    alert("GAME OVER! You were defeated! Enemies eliminated: " + kills);
+    backToMenu();
+  }
+
+  if(enemies.length === 0 && kills > 0) {
+    alert("VICTORY! You eliminated all enemies!");
+    backToMenu();
+  }
+}
+</script>
+
 </body>
 </html>
